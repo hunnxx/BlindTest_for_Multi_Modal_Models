@@ -6,14 +6,16 @@ import torch
 from transformers import (ChameleonProcessor, ChameleonForConditionalGeneration,
                           LlavaProcessor, LlavaForConditionalGeneration, 
                           IdeficsProcessor, IdeficsForVisionText2Text,
-                          Kosmos2Processor, Kosmos2ForConditionalGeneration)
+                          Kosmos2Processor, Kosmos2ForConditionalGeneration,
+                          MllamaProcessor, MllamaForConditionalGeneration)
 
 class MMM:
     def __init__(self, args) -> None:
-        if args.model_name_or_path not in ('chameleon-7b', 'chameleon-30b', 'llava-1.5-7b-hf', 
-                                           'idefics-9b', 'idefics-9b-instruct', 'kosmos-2-patch14-224'):
+        if args.model_name_or_path not in ('chameleon-7b', 'chameleon-30b', 'Llama-3.2-11B-Vision', 'Llama-3.2-90B-Vision',
+                                           'Llama-3.2-11B-Vision-Instruct', 'Llama-3.2-90B-Vision-Instruct', 'Llama-Guard-3-11B-Vision',
+                                           'llava-1.5-7b-hf', 'idefics-9b', 'idefics-9b-instruct', 'kosmos-2-patch14-224'):
             raise Exception('model_name_or_path')
-        if args.device not in ('cuda', 'auto', 'cuda:1', 'cuda:2', 'cuda:3'):
+        if args.device not in ('cuda', 'auto', 'cuda:0', 'cuda:1', 'cuda:2', 'cuda:3'):
             raise Exception('device_map')
         if args.batch_size < 1:
             raise Exception('batch size')
@@ -46,6 +48,12 @@ class MMM:
             __processor = ChameleonProcessor.from_pretrained(f"facebook/{self.model_name_or_path}", token=self.access_token)
             __model = ChameleonForConditionalGeneration.from_pretrained(f"facebook/{self.model_name_or_path}", pad_token_id=__processor.tokenizer.eos_token_id,
                                                                       torch_dtype=self.dtype, device_map=self.device_map, token=self.access_token)
+        elif self.model_name_or_path in ['Llama-3.2-11B-Vision', 'Llama-3.2-90B-Vision']:
+            __preprocessing = self.__mllama_preprocessing_fn
+            __postprocessing = self.__mllama_postprocessing_fn
+            __processor = MllamaProcessor.from_pretrained(f"meta-llama/{self.model_name_or_path}", padding_side='left', token=self.access_token)
+            __model = MllamaForConditionalGeneration.from_pretrained(f"meta-llama/{self.model_name_or_path}",
+                                                                     torch_dtype=self.dtype, device_map=self.device_map, token=self.access_token)
         elif self.model_name_or_path in ['llava-1.5-7b-hf']:
             __preprocessing = self.__llava_preprocessing_fn
             __postprocessing = self.__llava_postprocessing_fn
@@ -70,6 +78,20 @@ class MMM:
         self.model_kwargs = __model_kwargs
         self.processor_kwargs = __processor_kwargs
 
+    def __revised_text(self, text):
+        last_word = text[-1]
+        if last_word == '.' or last_word == '?':
+            return text
+        else:
+            return text + '.'
+
+    def __bytes2img(self, img_bytes):
+        img_bytes = io.BytesIO(img_bytes)
+        return Image.open(img_bytes)
+    
+    # ---------------------------------------------------------------------------------
+    # MMM Utils
+    # ---------------------------------------------------------------------------------
     def processor(self, **kwargs):
         return self.__processor(**kwargs, **self.processor_kwargs).to(self.__model.device, dtype=self.dtype)
 
@@ -88,6 +110,9 @@ class MMM:
     def prepare_output(self, data):
         return self.__postprocessing_fn(data)
     
+    # ---------------------------------------------------------------------------------
+    # Chameleon
+    # ---------------------------------------------------------------------------------
     def __chameleon_preprocessing_fn(self, data):
         task, img_info, prompt, gt, md = data
 
@@ -96,9 +121,7 @@ class MMM:
         else:
             input_prompt = prompt + "<image>"
 
-        img_bytes = img_info['bytes']
-        img_bytes = io.BytesIO(img_bytes)
-        input_img = Image.open(img_bytes)
+        input_img = self.__bytes2img(img_info['bytes'])
 
         return (task, input_img, input_prompt, prompt, gt, md)
     
@@ -106,6 +129,26 @@ class MMM:
         prompt, gen_output = data
         return gen_output[len(prompt):]
     
+    # ---------------------------------------------------------------------------------
+    # Llama-3.2
+    # ---------------------------------------------------------------------------------
+    def __mllama_preprocessing_fn(self, data):
+        task, img_info, prompt, gt, md = data
+
+        prompt = self.__revised_text(prompt)
+        input_prompt = f"<|image|>{prompt}"
+
+        input_img = self.__bytes2img(img_info['bytes'])
+
+        return (task, input_img, input_prompt, prompt, gt, md)
+
+    def __mllama_postprocessing_fn(self, data):
+        prompt, gen_output = data
+        return gen_output[len(prompt):]
+
+    # ---------------------------------------------------------------------------------
+    # Llava
+    # ---------------------------------------------------------------------------------
     def __llava_preprocessing_fn(self, data):
         task, img_info, prompt, gt, md = data
 
@@ -114,9 +157,7 @@ class MMM:
         else:
             input_prompt = f"USER: <image>\n{prompt} ASSISTANT:"
 
-        img_bytes = img_info['bytes']
-        img_bytes = io.BytesIO(img_bytes)
-        input_img = Image.open(img_bytes)
+        input_img = self.__bytes2img(img_info['bytes'])
 
         return (task, input_img, input_prompt, prompt, gt, md)
 
@@ -124,12 +165,13 @@ class MMM:
         _, gen_output = data
         return gen_output.split('ASSISTANT: ')[-1]
     
+    # ---------------------------------------------------------------------------------
+    # IDEFICS
+    # ---------------------------------------------------------------------------------
     def __idefics_preprocessing_fn(self, data):
         task, img_info, prompt, gt, md = data
 
-        img_bytes = img_info['bytes']
-        img_bytes = io.BytesIO(img_bytes)
-        input_img = Image.open(img_bytes)
+        input_img = self.__bytes2img(img_info['bytes'])
 
         input_prompt = [
             "User:",
@@ -143,14 +185,15 @@ class MMM:
         _, gen_output = data
         return gen_output.split('Assistant:')[-1]
     
+    # ---------------------------------------------------------------------------------
+    # KOSMOS-2
+    # ---------------------------------------------------------------------------------
     def __kosmos_preprocessing_fn(self, data):
         task, img_info, prompt, gt, md = data
 
         input_prompt = f"<grounding> {prompt}"
 
-        img_bytes = img_info['bytes']
-        img_bytes = io.BytesIO(img_bytes)
-        input_img = Image.open(img_bytes)
+        input_img = self.__bytes2img(img_info['bytes'])
 
         return (task, input_img, input_prompt, prompt, gt, md)
 
