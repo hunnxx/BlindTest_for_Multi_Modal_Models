@@ -54,6 +54,14 @@ class MMM:
             __processor = MllamaProcessor.from_pretrained(f"meta-llama/{self.model_name_or_path}", padding_side='left', token=self.access_token)
             __model = MllamaForConditionalGeneration.from_pretrained(f"meta-llama/{self.model_name_or_path}",
                                                                      torch_dtype=self.dtype, device_map=self.device_map, token=self.access_token)
+        elif self.model_name_or_path in ['Llama-3.2-11B-Vision-Instruct', 'Llama-3.2-90B-Vision-Instruct', 'Llama-Guard-3-11B-Vision']:
+            __preprocessing = self.__mllama_i_preprocessing_fn
+            __postprocessing = self.__mllama_i_postprocessing_fn
+            __processor = MllamaProcessor.from_pretrained(f"meta-llama/{self.model_name_or_path}", padding_side='left', token=self.access_token)
+            __model = MllamaForConditionalGeneration.from_pretrained(f"meta-llama/{self.model_name_or_path}",
+                                                                     torch_dtype=self.dtype, device_map=self.device_map, token=self.access_token)
+            __model_kwargs.update({'max_new_tokens': 200})
+            __processor_kwargs.update({'add_special_tokens': False})
         elif self.model_name_or_path in ['llava-1.5-7b-hf']:
             __preprocessing = self.__llava_preprocessing_fn
             __postprocessing = self.__llava_postprocessing_fn
@@ -145,6 +153,32 @@ class MMM:
     def __mllama_postprocessing_fn(self, data):
         prompt, gen_output = data
         return gen_output[len(prompt):]
+    
+    def __mllama_i_preprocessing_fn(self, data):
+        task, img_info, prompt, gt, md = data
+
+        prompt = self.__revised_text(prompt)
+        input_prompt = [
+            [
+                {"role": "user", 
+                 "content": [
+                     {"type": "image"},
+                     {"type": "text", "text": prompt}
+                     ]
+                }
+            ],
+        ]
+        input_prompt = self.__processor.apply_chat_template(input_prompt, add_generation_prompt=True)
+        if self.batch_size >= 1:
+            input_prompt = input_prompt[0]
+
+        input_img = self.__bytes2img(img_info['bytes'])
+
+        return (task, input_img, input_prompt, prompt, gt, md)
+
+    def __mllama_i_postprocessing_fn(self, data):
+        _, gen_output = data
+        return gen_output.split('assistant\n\n')[-1]
 
     # ---------------------------------------------------------------------------------
     # Llava
