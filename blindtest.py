@@ -20,7 +20,6 @@ parser.add_argument("--device", type=str, default='cuda', help='cuda for single 
 parser.add_argument("--batch_size", type=int, default=1, help='Batch size')
 parser.add_argument("--dtype", type=str, default='float32', help='float32 | bfloat16')
 parser.add_argument("--viz", action='store_true', help='Visualizatino for the last layer')
-parser.add_argument("--return_dict", action="store_true", help='Return dictionary outputs in model.generate(...)')
 parser.add_argument("--access_token", type=str, default=None, help='Huggingface access token')
 args = parser.parse_args()
     
