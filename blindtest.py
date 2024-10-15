@@ -46,25 +46,24 @@ def batch_inference(mmm):
             gts.append(gt)
 
         if mmm.model_name_or_path in ['idefics-9b', 'idefics-9b-instruct']:
-            inputs = mmm.processor(prompts=input_prompts, padding=True, return_tensors="pt").to(mmm.model.device, dtype=mmm.dtype)
+            inputs = mmm.processor(prompts=input_prompts, padding=True)
         else:
-            inputs = mmm.processor(text=input_prompts, images=input_imgs, padding=True, return_tensors="pt").to(mmm.model.device, dtype=mmm.dtype)
+            inputs = mmm.processor(text=input_prompts, images=input_imgs, padding=True)
 
         if mmm.model_name_or_path in ['kosmos-2-patch14-224']:
-            outputs = mmm.model.generate(pixel_values=inputs["pixel_values"],
-                                        input_ids=inputs["input_ids"],
-                                        attention_mask=inputs["attention_mask"],
-                                        image_embeds_position_mask=inputs["image_embeds_position_mask"],
-                                        **mmm.model_kwargs)
+            outputs = mmm.generate(pixel_values=inputs["pixel_values"],
+                                   input_ids=inputs["input_ids"],
+                                   attention_mask=inputs["attention_mask"],
+                                   image_embeds_position_mask=inputs["image_embeds_position_mask"],)
         else:
-            outputs = mmm.model.generate(**inputs, **mmm.model_kwargs)
+            outputs = mmm.generate(**inputs)
         
         if isinstance(outputs, GenerateDecoderOnlyOutput):
             gen_ids = outputs.sequences
         else:
             gen_ids = outputs
 
-        gen_outputs = mmm.processor.batch_decode(gen_ids, skip_special_tokens=True)
+        gen_outputs = mmm.batch_decode(gen_ids)
         
         for idx in range(len(gen_outputs)):
             answer = mmm.prepare_output([prompts[idx], gen_outputs[idx]])
@@ -102,18 +101,17 @@ def inference(mmm):
         task, input_img, input_prompt, prompt, gt, md = mmm.prepare_input([task, img_info, prompt, gt, md]) 
 
         if mmm.model_name_or_path in ['idefics-9b', 'idefics-9b-instruct']:
-            inputs = mmm.processor(prompts=[input_prompt], return_tensors="pt").to(mmm.model.device, dtype=mmm.dtype)
+            inputs = mmm.processor(prompts=[input_prompt])
         else:
-            inputs = mmm.processor(text=input_prompt, images=input_img, return_tensors="pt").to(mmm.model.device, dtype=mmm.dtype)
+            inputs = mmm.processor(text=input_prompt, images=input_img)
 
         if mmm.model_name_or_path in ['kosmos-2-patch14-224']:
-            output = mmm.model.generate(pixel_values=inputs["pixel_values"],
-                                        input_ids=inputs["input_ids"],
-                                        attention_mask=inputs["attention_mask"],
-                                        image_embeds_position_mask=inputs["image_embeds_position_mask"],
-                                        **mmm.model_kwargs)
+            output = mmm.generate(pixel_values=inputs["pixel_values"],
+                                  input_ids=inputs["input_ids"],
+                                  attention_mask=inputs["attention_mask"],
+                                  image_embeds_position_mask=inputs["image_embeds_position_mask"],)
         else:
-            output = mmm.model.generate(**inputs, **mmm.model_kwargs)
+            output = mmm.generate(**inputs)
         
         if isinstance(output, GenerateDecoderOnlyOutput):
             last_layer_head_atts = output.attentions[0][-1].cpu().numpy()
@@ -133,7 +131,7 @@ def inference(mmm):
         else:
             gen_ids = output[0]
 
-            gen_output = mmm.processor.decode(gen_ids, skip_special_tokens=True)
+            gen_output = mmm.decode(gen_ids)
             answer = mmm.prepare_output([prompt, gen_output])
 
             result = {'row_idx': row_idx, 'prompt': prompt, 'gt': gt, 'output': gen_output, 'answer': answer}
