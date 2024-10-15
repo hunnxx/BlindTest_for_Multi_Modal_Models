@@ -101,7 +101,7 @@ def inference(mmm):
         task, input_img, input_prompt, prompt, gt, md = mmm.prepare_input([task, img_info, prompt, gt, md]) 
 
         if mmm.model_name_or_path in ['idefics-9b', 'idefics-9b-instruct']:
-            inputs = mmm.processor(prompts=[input_prompt])
+            inputs = mmm.processor(prompts=input_prompt)
         else:
             inputs = mmm.processor(text=input_prompt, images=input_img)
 

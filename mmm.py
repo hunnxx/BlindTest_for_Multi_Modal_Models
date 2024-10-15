@@ -212,6 +212,8 @@ class MMM:
             input_img,
             f"{prompt}\nAssistant:",
         ]
+        if self.batch_size >= 1:
+            input_prompt = [input_prompt]
 
         return (task, input_img, input_prompt, prompt, gt, md)
 
