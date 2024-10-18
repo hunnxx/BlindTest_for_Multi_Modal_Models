@@ -109,6 +109,10 @@ def viz_inference(mmm):
 
                 plt.savefig(folder_path + f'/{mmm.viz_ptype}_q_att_{i}.png')
                 plt.close()
+
+        with open(folder_path + f'/{mmm.viz_ptype}_tokens.txt', 'w') as file:
+            input_prompt_tokens = mmm.convert_ids_to_tokens(inputs['input_ids'][0])
+            file.write(str(input_prompt_tokens))
     else:
         raise Exception('Activate an agrument for viz')
 

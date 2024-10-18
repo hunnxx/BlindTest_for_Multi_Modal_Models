@@ -174,6 +174,9 @@ class MMM:
     def tokenization(self, text, **text_kwargs):
         return self.__processor.tokenizer(text, **text_kwargs).encodings[0]
     
+    def convert_ids_to_tokens(self, ids):
+        return self.__processor.tokenizer.convert_ids_to_tokens(ids)
+    
     def decode(self, ids):
         return self.__processor.decode(ids, skip_special_tokens=True)
     
